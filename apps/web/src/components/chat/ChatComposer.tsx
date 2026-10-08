@@ -4489,9 +4489,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             edit.start,
             edit.end,
             edit.replacement,
-            key === "Tab"
-              ? { expandedCursorAfterReplace: selection.start + edit.replacement.length }
-              : undefined,
+            edit.cursor === undefined ? undefined : { expandedCursorAfterReplace: edit.cursor },
           )
         ) {
           return true;
