@@ -85,7 +85,12 @@ import {
   replaceTextRange,
 } from "../../composer-logic";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
-import { listContinuationForEnter, listIndentForTab } from "../../composer-list-continuation";
+import {
+  type ComposerListEdit,
+  listContinuationForEnter,
+  listIndentForTab,
+  listOutdentForShiftTab,
+} from "../../composer-list-continuation";
 import {
   deriveComposerSendState,
   getAntigravitySendBlockReason,
@@ -4429,7 +4434,29 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       sendShortcut: settings.sendShortcut,
       prompt: promptRef.current,
     });
+    // List edits rewrite the stored Markdown, so both composer modes share them.
+    const applyListEdit = (
+      listEdit: (value: string, start: number, end: number) => ComposerListEdit | null,
+    ) => {
+      if (event.isComposing) return false;
+      const selection = composerEditorRef.current?.readSelectionRange();
+      const snapshot = readComposerSnapshot();
+      if (!selection || selection.start !== selection.end) return false;
+      if (snapshot.value !== promptRef.current) return false;
+      const edit = listEdit(snapshot.value, selection.start, selection.end);
+      return (
+        edit !== null &&
+        applyPromptReplacement(
+          edit.start,
+          edit.end,
+          edit.replacement,
+          edit.cursor === undefined ? undefined : { expandedCursorAfterReplace: edit.cursor },
+        )
+      );
+    };
     if (key === "Tab" && event.shiftKey && submissionIntent === null) {
+      // A nested list item moves back out; everywhere else Shift+Tab toggles plan mode.
+      if (applyListEdit(listOutdentForShiftTab)) return true;
       if (!planModeUiEnabled) return false;
       toggleInteractionMode();
       return true;
@@ -4475,29 +4502,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     // Native task splitting preserves marks and chips on both sides of the caret.
     if (key === "Enter" && isTaskItem) return false;
-    if (!event.isComposing && (key === "Enter" || (key === "Tab" && !event.shiftKey))) {
-      const selection = composerEditorRef.current?.readSelectionRange();
-      const snapshot = readComposerSnapshot();
-      if (selection && selection.start === selection.end && snapshot.value === promptRef.current) {
-        const edit =
-          key === "Enter"
-            ? listContinuationForEnter(snapshot.value, selection.start)
-            : listIndentForTab(snapshot.value, selection.start, selection.end);
-        if (
-          edit &&
-          applyPromptReplacement(
-            edit.start,
-            edit.end,
-            edit.replacement,
-            key === "Tab"
-              ? { expandedCursorAfterReplace: selection.start + edit.replacement.length }
-              : undefined,
-          )
-        ) {
-          return true;
-        }
-      }
+    if (
+      key === "Enter" &&
+      applyListEdit((value, start) => listContinuationForEnter(value, start))
+    ) {
+      return true;
     }
+    if (key === "Tab" && !event.shiftKey && applyListEdit(listIndentForTab)) return true;
     return false;
   };
 
